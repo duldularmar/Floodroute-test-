@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import FloodMap, { ProfileId } from './Map'
+import FloodMap from './Map'
+import type { ProfileId } from './api'
+import { PROFILE_ORDER } from './api'
 import ControlPanel, { MissionConfig, VEHICLES } from './ControlPanel'
 import RoutePanel from './RoutePanel'
 import {
@@ -8,6 +10,26 @@ import {
 } from './api'
 
 type Routes = Partial<Record<ProfileId, RouteResult>>
+
+/* ------------------------------ small pieces ------------------------------ */
+
+function Spinner() {
+  return (
+    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+  )
+}
+
+function ShimmerText({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span
+      className={`fr-shimmer-text bg-clip-text font-extrabold tracking-wider text-transparent ${className}`}
+    >
+      {children}
+    </span>
+  )
+}
+
+/* --------------------------------- app ----------------------------------- */
 
 export default function App() {
   const [config, setConfig] = useState<MissionConfig>({
@@ -71,7 +93,7 @@ export default function App() {
     try {
       // CALCULATE = clean NORMAL baseline: clear any active flood state and
       // fetch all three profiles so the comparison bar is fully populated.
-      const profiles: ProfileId[] = ['fastest', 'safest', 'high_ground']
+      const profiles: ProfileId[] = [...PROFILE_ORDER]
       const settled = await Promise.allSettled(
         profiles.map((profile) =>
           calculateRoute({ origin, destination, vehicle: config.vehicle, profile }),
@@ -148,26 +170,53 @@ export default function App() {
   return (
     <div className={`flex h-screen flex-col overflow-hidden bg-ops-bg text-ops-text ${flash ? 'fr-flash' : ''}`}>
       {/* header */}
-      <header className="flex items-center justify-between border-b border-ops-edge bg-ops-panel px-4 py-2.5">
+      <header className="relative z-[900] flex items-center justify-between border-b border-ops-edge bg-white/85 px-4 py-2.5 backdrop-blur">
         <div className="flex items-center gap-3">
-          <span className="text-lg font-black tracking-widest">FLOODROUTE</span>
-          <span className="rounded bg-ops-edge px-2 py-0.5 text-[10px] font-bold tracking-wider text-ops-muted">
-            ROUTING CORE v0.2
+          <div className="leading-none">
+            <div className="bg-gradient-to-r from-slate-900 via-blue-800 to-indigo-700 bg-clip-text text-lg font-black tracking-widest text-transparent">
+              FLOODROUTE
+            </div>
+            <div className="mt-1 font-mono text-[9px] font-medium tracking-[0.2em] text-ops-muted">
+              EMERGENCY ROUTING CONSOLE
+            </div>
+          </div>
+          <span className="ml-1 hidden rounded-md border border-ops-edge bg-ops-bg px-1.5 py-0.5 font-mono text-[10px] font-bold text-ops-muted sm:inline">
+            v0.2
           </span>
         </div>
-        <div className="flex items-center gap-2 text-xs">
-          <span className={`inline-block h-2.5 w-2.5 rounded-full ${simActive ? 'animate-pulse bg-ops-warn' : 'bg-ops-ok'}`} />
-          <span className={simActive ? 'font-bold text-ops-warn' : 'text-ops-ok'}>
-            {simActive ? `🌊 FLOOD SIMULATION ACTIVE — ${simulation?.flood_level}` : '● SIMULATION READY'}
+
+        <div className="flex items-center gap-2.5 text-xs">
+          {/* status pill */}
+          <div
+            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-card transition-colors ${
+              simActive ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50'
+            }`}
+          >
+            <span className="relative flex h-2.5 w-2.5">
+              {simActive && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-60" />
+              )}
+              <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${simActive ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+            </span>
+            {simActive ? (
+              <ShimmerText className="fr-shimmer-warn text-[11px]">
+                🌊 FLOOD SIMULATION — {simulation?.flood_level}
+              </ShimmerText>
+            ) : (
+              <span className="text-[11px] font-bold tracking-wider text-emerald-700">SIMULATION READY</span>
+            )}
+          </div>
+
+          <span className="hidden rounded-lg border border-ops-edge bg-white px-2.5 py-1.5 font-semibold text-ops-text shadow-card md:inline">
+            {vehicle.label}
           </span>
-          <span className="ml-2 text-ops-muted">{vehicle.label}</span>
         </div>
       </header>
 
       {/* main row */}
       <div className="relative flex min-h-0 flex-1">
         {/* left: controls */}
-        <aside className="w-[280px] shrink-0 border-r border-ops-edge bg-ops-panel">
+        <aside className="z-[800] w-[290px] shrink-0 border-r border-ops-edge bg-white shadow-card">
           <ControlPanel
             config={config}
             onChange={setConfig}
@@ -191,34 +240,65 @@ export default function App() {
             simulation={simulation}
           />
 
-          {/* legend overlay */}
-          <div className="absolute bottom-4 right-4 z-[500] rounded-lg border border-ops-edge bg-ops-bg/90 px-3 py-2 text-[11px] shadow-lg">
-            <div className="mb-1 font-bold tracking-wider text-ops-muted">ROUTES</div>
-            <div className="flex items-center gap-2"><span className="inline-block h-0.5 w-4 rounded bg-ops-accent" /> fastest</div>
-            <div className="flex items-center gap-2"><span className="inline-block h-0.5 w-4 rounded bg-ops-ok" /> safest</div>
-            <div className="flex items-center gap-2"><span className="inline-block w-4 border-t-2 border-dashed border-purple-400" /> high ground</div>
-            <div className="mb-1 mt-2 font-bold tracking-wider text-ops-muted">FLOOD (SIMULATED)</div>
-            <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-4 rounded bg-ops-warn/30" /> low</div>
-            <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-4 rounded bg-ops-warn/70" /> moderate</div>
-            <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-4 rounded bg-ops-danger/50" /> severe</div>
-            <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-4 rounded border-2 border-ops-danger" /> 🚫 blocked</div>
-            <div className="mt-1 text-[10px] text-ops-muted">© OpenStreetMap contributors</div>
+          {/* legend overlay (glass) */}
+          <div className="absolute bottom-4 right-4 z-[500] w-44 animate-rise rounded-xl border border-white/60 bg-white/80 px-3 py-2.5 text-[11px] shadow-overlay backdrop-blur-md">
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+              <span className="text-[10px] font-extrabold tracking-widest text-ops-text">ROUTES</span>
+            </div>
+            <div className="space-y-1 text-ops-muted">
+              {[
+                { id: 'fastest', label: 'fastest', cls: 'from-blue-600 to-blue-400' },
+                { id: 'safest', label: 'safest', cls: 'from-emerald-600 to-emerald-400' },
+                { id: 'high_ground', label: 'high ground', cls: 'from-violet-600 to-violet-400', dashed: true },
+                { id: 'shortest', label: 'shortest', cls: 'from-amber-500 to-amber-300', dashed: true },
+                { id: 'major_roads', label: 'major roads', cls: 'from-cyan-600 to-cyan-400' },
+                { id: 'balanced', label: 'balanced', cls: 'from-rose-600 to-rose-400' },
+              ].map((r) => (
+                <div key={r.id} className="flex items-center gap-2">
+                  {r.dashed ? (
+                    <span className={`inline-block w-5 border-t-2 border-dashed ${r.cls.replace(/from-(\S+)/, 'border-$1').replace(/to-\S+/, '')}`} />
+                  ) : (
+                    <span className={`inline-block h-1 w-5 rounded-full bg-gradient-to-r ${r.cls}`} />
+                  )}
+                  {r.label}
+                </div>
+              ))}
+            </div>
+            <div className="mb-1.5 mt-3 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <span className="text-[10px] font-extrabold tracking-widest text-ops-text">FLOOD (SIM.)</span>
+            </div>
+            <div className="space-y-1 text-ops-muted">
+              <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-4 rounded bg-amber-400/40" /> low</div>
+              <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-4 rounded bg-amber-500/70" /> moderate</div>
+              <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-4 rounded bg-red-500/60" /> severe</div>
+              <div className="flex items-center gap-2"><span className="inline-block h-2.5 w-4 rounded border-2 border-red-600 bg-white" /> 🚫 blocked</div>
+            </div>
+            <div className="mt-2 border-t border-slate-200/70 pt-1.5 text-[9px] text-ops-muted/70">
+              © OpenStreetMap contributors
+            </div>
           </div>
 
-          {/* error banner */}
+          {/* error banner (glass) */}
           {error && (
-            <div className="absolute left-1/2 top-4 z-[600] w-[420px] -translate-x-1/2 rounded-lg border border-ops-danger/60 bg-ops-danger/15 px-4 py-2 text-center text-sm text-ops-danger shadow-xl backdrop-blur">
-              <b>⚠ {error.message}</b>
-              {error.detail && <div className="mt-0.5 text-xs opacity-80">{error.detail}</div>}
-              <button className="ml-3 underline underline-offset-2" onClick={() => setError(null)}>dismiss</button>
+            <div className="absolute left-1/2 top-4 z-[600] w-[420px] -translate-x-1/2 animate-rise rounded-xl border border-red-300/70 bg-white/90 px-4 py-2.5 text-center text-sm text-ops-danger shadow-overlay backdrop-blur-md">
+              <div className="flex items-center justify-center gap-2">
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-red-100 text-[11px]">⚠</span>
+                <b>{error.message}</b>
+                <button className="ml-2 rounded-md px-1.5 text-xs text-ops-muted underline underline-offset-2 hover:text-ops-text" onClick={() => setError(null)}>
+                  dismiss
+                </button>
+              </div>
+              {error.detail && <div className="mt-0.5 text-xs text-ops-muted">{error.detail}</div>}
             </div>
           )}
 
-          {/* no-route banner */}
+          {/* no-route banner (glass) */}
           {simulation && !anyRoute && (
-            <div className="absolute left-1/2 top-4 z-[600] w-[460px] -translate-x-1/2 rounded-lg border border-ops-danger/60 bg-ops-danger/20 px-4 py-3 text-center shadow-xl backdrop-blur">
+            <div className="absolute left-1/2 top-4 z-[600] w-[460px] -translate-x-1/2 animate-rise rounded-xl border border-red-300/70 bg-white/90 px-4 py-3 text-center shadow-overlay backdrop-blur-md">
               <b className="text-ops-danger">NO FEASIBLE ROUTE</b>
-              <div className="text-xs text-ops-text/80">
+              <div className="mt-0.5 text-xs text-ops-muted">
                 {simulation.vehicle} (limit {simulation.vehicle_limit_m} m) cannot enter this area at
                 flood level {simulation.flood_level}. Try Fire Engine / Rescue Truck or a lower level.
               </div>
@@ -228,9 +308,12 @@ export default function App() {
 
         {/* busy overlay */}
         {busy !== 'idle' && (
-          <div className="absolute inset-0 z-[700] flex items-center justify-center bg-ops-bg/40 backdrop-blur-[2px]">
-            <div className="rounded-lg border border-ops-edge bg-ops-panel px-5 py-3 text-sm font-bold tracking-wider text-ops-accent shadow-2xl">
-              {busy === 'calculating' ? 'CALCULATING ROUTE…' : '🌊 SIMULATING FLOOD…'}
+          <div className="absolute inset-0 z-[700] flex items-center justify-center bg-white/40 backdrop-blur-[3px]">
+            <div className="flex animate-rise items-center gap-3 rounded-2xl border border-ops-edge bg-white/95 px-6 py-4 shadow-overlay">
+              <Spinner />
+              <ShimmerText className={`text-sm ${busy === 'calculating' ? 'fr-shimmer-accent' : 'fr-shimmer-warn'}`}>
+                {busy === 'calculating' ? 'CALCULATING ROUTE…' : '🌊 SIMULATING FLOOD…'}
+              </ShimmerText>
             </div>
           </div>
         )}

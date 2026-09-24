@@ -1,53 +1,70 @@
-import { useEffect } from 'react'
+import React, { useEffect } from 'react'
 import {
   MapContainer, TileLayer, Marker, Polyline, Polygon, Popup, useMap,
 } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { FloodZone, LatLng, RouteResult, SimulateResponse } from './api'
+import type { FloodZone, LatLng, RouteResult, SimulateResponse, ProfileId } from './api'
+import { PROFILE_ORDER } from './api'
+
+// re-export so existing imports from './Map' keep working
+export type { ProfileId }
 
 // ---------------- marker icons (inline SVG, no image assets) ---------------- //
 const pin = (color: string, glyph: string) =>
   L.divIcon({
     className: 'fr-pin',
-    html: `<svg width="30" height="30" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
-      <path d="M15 2 C9 2 5 6.5 5 12 C5 19 15 28 15 28 C15 28 25 19 25 12 C25 6.5 21 2 15 2 Z"
-            fill="${color}" stroke="#0b1220" stroke-width="1.5"/>
-      <text x="15" y="16.5" font-size="12" text-anchor="middle" fill="#0b1220"
-            font-family="system-ui, sans-serif" font-weight="700">${glyph}</text>
+    html: `<svg width="34" height="42" viewBox="0 0 34 42" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="17" cy="38" rx="8" ry="2.6" fill="rgba(15,23,42,0.18)"/>
+      <path d="M17 4 C11 4 7 8.3 7 13.5 C7 20.5 17 30 17 30 C17 30 27 20.5 27 13.5 C27 8.3 23 4 17 4 Z"
+            fill="${color}" stroke="#ffffff" stroke-width="2"/>
+      <circle cx="17" cy="13.5" r="6.5" fill="rgba(255,255,255,0.25)"/>
+      <text x="17" y="17.5" font-size="11" text-anchor="middle" fill="#ffffff"
+            font-family="Inter, system-ui, sans-serif" font-weight="800">${glyph}</text>
     </svg>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 28],
+    iconSize: [34, 42],
+    iconAnchor: [17, 38],
   })
 
-const ORIGIN_ICON = pin('#38bdf8', 'A')
-const DEST_ICON = pin('#f87171', 'B')
+const ORIGIN_ICON = pin('#2563eb', 'A')
+const DEST_ICON = pin('#dc2626', 'B')
+
+// soft halo under the origin pin with a CSS pulse ring (styles in index.css)
+const ORIGIN_HALO_ICON = L.divIcon({
+  className: 'fr-origin-pulse',
+  html: `<div><span class="fr-ring"></span></div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+})
+
 const BLOCKED_ICON = L.divIcon({
   className: 'fr-pin',
-  html: `<div style="width:26px;height:26px;border-radius:50%;background:rgba(248,113,113,0.92);
-    border:2px solid #0b1220;display:flex;align-items:center;justify-content:center;
-    font-size:13px;line-height:1;box-shadow:0 0 6px rgba(248,113,113,0.8)">🚫</div>`,
+  html: `<div style="width:26px;height:26px;border-radius:50%;background:rgba(220,38,38,0.92);
+    border:2px solid #ffffff;display:flex;align-items:center;justify-content:center;
+    font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(15,23,42,0.25)">🚫</div>`,
   iconSize: [26, 26],
   iconAnchor: [13, 13],
 })
 
 // ---------------- styles per profile ---------------- //
-const ROUTE_STYLES: Record<string, { color: string; weight: number }> = {
-  fastest: { color: '#38bdf8', weight: 6 },
-  safest: { color: '#34d399', weight: 6 },
-  high_ground: { color: '#a78bfa', weight: 6 },
+interface RouteStyle { color: string; weight: number; glow: string; casing: string; dashArray?: string }
+const ROUTE_STYLES: Record<string, RouteStyle> = {
+  fastest: { color: '#2563eb', weight: 5, glow: 'rgba(37, 99, 235, 0.35)', casing: '#1e40af' },
+  safest: { color: '#059669', weight: 5, glow: 'rgba(5, 150, 105, 0.35)', casing: '#065f46' },
+  high_ground: { color: '#7c3aed', weight: 5, glow: 'rgba(124, 58, 237, 0.35)', casing: '#5b21b6', dashArray: '10 6' },
+  shortest: { color: '#f59e0b', weight: 5, glow: 'rgba(245, 158, 11, 0.35)', casing: '#b45309', dashArray: '2 7' },
+  major_roads: { color: '#0891b2', weight: 5, glow: 'rgba(8, 145, 178, 0.35)', casing: '#155e75' },
+  balanced: { color: '#e11d48', weight: 5, glow: 'rgba(225, 29, 72, 0.30)', casing: '#9f1239' },
 }
 
 const UNSELECTED_OPACITY = 0.35
 const UNSELECTED_WEIGHT = 3
 
 const SEVERITY_STYLE: Record<string, { color: string; fillOpacity: number }> = {
-  low: { color: '#fbbf24', fillOpacity: 0.12 },
-  moderate: { color: '#fbbf24', fillOpacity: 0.3 },
-  severe: { color: '#f87171', fillOpacity: 0.42 },
+  low: { color: '#d97706', fillOpacity: 0.14 },
+  moderate: { color: '#d97706', fillOpacity: 0.32 },
+  severe: { color: '#dc2626', fillOpacity: 0.4 },
 }
-
-export type ProfileId = 'fastest' | 'safest' | 'high_ground'
 
 // ---------------- auto-fit helper ---------------- //
 function FitAll({
@@ -96,7 +113,7 @@ export default function FloodMap({
       roads: (simulation?.blocked_roads ?? []).filter((b) => b.zone === zone.id),
     }))
     .filter((g) => g.roads.length > 0)
-  const ordered = (['fastest', 'safest', 'high_ground'] as const)
+  const ordered = PROFILE_ORDER
     .filter((p) => routes[p]?.success)
     .sort((a, b) => (a === selected ? 1 : 0) - (b === selected ? 1 : 0))
 
@@ -179,19 +196,42 @@ export default function FloodMap({
         const r = routes[p] as RouteResult
         const sel = p === selected
         const st = ROUTE_STYLES[p]
+        const path = r.path.map(([lon, lat]) => [lat, lon] as [number, number])
+        if (!sel) {
+          return (
+            <Polyline
+              key={p + '-' + r.distance_km + '-' + r.path.length}
+              positions={path}
+              pathOptions={{
+                color: st.color,
+                weight: UNSELECTED_WEIGHT,
+                opacity: UNSELECTED_OPACITY,
+                dashArray: st.dashArray,
+                lineCap: 'round',
+              }}
+              eventHandlers={{ click: () => onSelect(p) }}
+            />
+          )
+        }
         return (
-          <Polyline
-            key={p + '-' + r.distance_km + '-' + r.path.length}
-            positions={r.path.map(([lon, lat]) => [lat, lon])}
-            pathOptions={{
-              color: st.color,
-              weight: sel ? st.weight : UNSELECTED_WEIGHT,
-              opacity: sel ? 0.95 : UNSELECTED_OPACITY,
-              dashArray: p === 'high_ground' ? '10 6' : undefined,
-              lineCap: 'round',
-            }}
-            eventHandlers={{ click: () => onSelect(p) }}
-          />
+          <React.Fragment key={p + '-' + r.distance_km + '-' + r.path.length}>
+            {/* soft glow underlay */}
+            <Polyline positions={path} pathOptions={{ color: st.glow, weight: st.weight + 12, opacity: 0.35, lineCap: 'round' }} interactive={false} />
+            {/* dark casing */}
+            <Polyline positions={path} pathOptions={{ color: st.casing, weight: st.weight + 4, opacity: 0.9, lineCap: 'round' }} interactive={false} />
+            {/* main line */}
+            <Polyline
+              positions={path}
+              pathOptions={{
+                color: st.color,
+                weight: st.weight,
+                opacity: 0.98,
+                dashArray: st.dashArray,
+                lineCap: 'round',
+              }}
+              eventHandlers={{ click: () => onSelect(p) }}
+            />
+          </React.Fragment>
         )
       })}
 
@@ -201,6 +241,7 @@ export default function FloodMap({
           <Popup>Origin</Popup>
         </Marker>
       )}
+      {origin && <Marker position={[origin.lat, origin.lon]} icon={ORIGIN_HALO_ICON} interactive={false} />}
       {destination && (
         <Marker position={[destination.lat, destination.lon]} icon={DEST_ICON}>
           <Popup>Destination</Popup>

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { FloodLevel, VehicleId } from './api'
 import { LOCATIONS } from './api'
 
@@ -7,11 +8,11 @@ export const VEHICLES: { id: VehicleId; label: string; limit: number }[] = [
   { id: 'rescue_truck', label: 'Rescue Truck', limit: 0.55 },
 ]
 
-const FLOOD_LEVELS: { id: FloodLevel; label: string }[] = [
-  { id: 'NORMAL', label: 'Normal' },
-  { id: 'LOW', label: 'Low' },
-  { id: 'MODERATE', label: 'Moderate' },
-  { id: 'SEVERE', label: 'Severe' },
+const FLOOD_LEVELS: { id: FloodLevel; label: string; hint?: string }[] = [
+  { id: 'NORMAL', label: 'Normal', hint: 'no simulation' },
+  { id: 'LOW', label: 'Low', hint: 'shallow pooling' },
+  { id: 'MODERATE', label: 'Moderate', hint: 'streets flooding' },
+  { id: 'SEVERE', label: 'Severe', hint: 'major inundation' },
 ]
 
 const LOCATION_IDS = Object.keys(LOCATIONS) as (keyof typeof LOCATIONS)[]
@@ -22,6 +23,28 @@ export interface MissionConfig {
   destinationId: string
   floodLevel: FloodLevel
 }
+
+function Field({
+  label, children, highlight,
+}: {
+  label: string
+  children: React.ReactNode
+  highlight?: boolean
+}) {
+  return (
+    <label className={`block rounded-xl border p-2.5 transition-colors focus-within:border-blue-400 focus-within:bg-white
+                      ${highlight ? 'animate-rise border-amber-400 bg-amber-50/70 ring-2 ring-amber-200' : 'border-ops-edge bg-ops-bg/60'}`}>
+      <span className="mb-1 flex items-center gap-1.5 px-0.5 text-[10px] font-extrabold tracking-widest text-ops-muted">
+        {label}
+      </span>
+      {children}
+    </label>
+  )
+}
+
+const selectCls =
+  'w-full rounded-lg border border-ops-edge bg-white px-3 py-2 text-sm font-medium text-ops-text ' +
+  'outline-none transition-colors focus:border-blue-500 disabled:opacity-50'
 
 export default function ControlPanel({
   config, onChange, onCalculate, onSimulate, busy, simulateArmed,
@@ -35,20 +58,31 @@ export default function ControlPanel({
 }) {
   const set = (patch: Partial<MissionConfig>) => onChange({ ...config, ...patch })
   const vehicle = VEHICLES.find((v) => v.id === config.vehicle)!
+  const meterPct = (vehicle.limit / 0.6) * 100
 
-  const selectCls =
-    'w-full rounded-md border border-ops-edge bg-ops-bg px-3 py-2 text-sm text-ops-text ' +
-    'outline-none focus:border-ops-accent transition-colors disabled:opacity-50'
+  // warn inline (instead of a dead disabled button) when simulating at NORMAL
+  const [needLevel, setNeedLevel] = useState(false)
+  useEffect(() => {
+    if (config.floodLevel !== 'NORMAL') setNeedLevel(false)
+  }, [config.floodLevel])
+
+  const handleSimulateClick = () => {
+    if (config.floodLevel === 'NORMAL') {
+      setNeedLevel(true)
+      return
+    }
+    onSimulate()
+  }
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
-      <div>
-        <h2 className="text-xs font-bold tracking-widest text-ops-muted">MISSION</h2>
-        <div className="mt-2 h-px bg-ops-edge" />
+    <div className="flex h-full flex-col gap-3.5 overflow-y-auto p-4">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xs font-extrabold tracking-widest text-ops-text">MISSION</h2>
+        <div className="h-px flex-1 bg-gradient-to-r from-ops-edge to-transparent" />
       </div>
 
-      <label className="block">
-        <span className="mb-1 block text-xs font-semibold tracking-wide text-ops-muted">VEHICLE</span>
+      {/* vehicle */}
+      <Field label="VEHICLE">
         <select
           className={selectCls}
           value={config.vehicle}
@@ -59,13 +93,22 @@ export default function ControlPanel({
             <option key={v.id} value={v.id}>{v.label}</option>
           ))}
         </select>
-        <span className="mt-1 block text-[11px] text-ops-muted">
-          max simulated depth {vehicle.limit.toFixed(2)} m (prototype value)
-        </span>
-      </label>
+        <div className="mt-2 px-0.5">
+          <div className="flex items-center justify-between text-[10px] font-semibold text-ops-muted">
+            <span>max water depth</span>
+            <span className="font-mono font-bold text-amber-600">{vehicle.limit.toFixed(2)} m</span>
+          </div>
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 transition-all duration-500"
+              style={{ width: `${meterPct}%` }}
+            />
+          </div>
+        </div>
+      </Field>
 
-      <label className="block">
-        <span className="mb-1 block text-xs font-semibold tracking-wide text-ops-muted">FROM</span>
+      {/* route endpoints */}
+      <Field label="FROM">
         <select
           className={selectCls}
           value={config.originId}
@@ -76,10 +119,9 @@ export default function ControlPanel({
             <option key={id} value={id}>{LOCATIONS[id].label}</option>
           ))}
         </select>
-      </label>
+      </Field>
 
-      <label className="block">
-        <span className="mb-1 block text-xs font-semibold tracking-wide text-ops-muted">DESTINATION</span>
+      <Field label="DESTINATION">
         <select
           className={selectCls}
           value={config.destinationId}
@@ -92,10 +134,10 @@ export default function ControlPanel({
             </option>
           ))}
         </select>
-      </label>
+      </Field>
 
-      <label className="block">
-        <span className="mb-1 block text-xs font-semibold tracking-wide text-ops-muted">FLOOD LEVEL</span>
+      {/* flood level */}
+      <Field label="FLOOD LEVEL" highlight={needLevel}>
         <select
           className={selectCls}
           value={config.floodLevel}
@@ -106,29 +148,41 @@ export default function ControlPanel({
             <option key={l.id} value={l.id}>{l.label}</option>
           ))}
         </select>
-      </label>
+        <div className="mt-1.5 px-0.5 text-[10px] font-medium text-ops-muted">
+          {FLOOD_LEVELS.find((l) => l.id === config.floodLevel)?.hint}
+        </div>
+      </Field>
 
-      <div className="mt-2 flex flex-col gap-2">
+      {/* actions */}
+      <div className="mt-1 flex flex-col gap-2.5">
         <button
           onClick={onCalculate}
           disabled={busy || config.originId === config.destinationId}
-          className="rounded-md bg-ops-accent px-4 py-2.5 text-sm font-bold tracking-wide text-ops-bg
-                     transition hover:brightness-110 active:brightness-95 disabled:cursor-not-allowed disabled:opacity-40"
+          className="group relative overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-extrabold tracking-wide text-white
+                     shadow-accent-glow transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0
+                     disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:translate-y-0"
         >
+          <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
           {busy ? 'CALCULATING…' : 'CALCULATE ROUTE'}
         </button>
         <button
-          onClick={onSimulate}
-          disabled={busy || config.originId === config.destinationId || config.floodLevel === 'NORMAL'}
-          title={config.floodLevel === 'NORMAL' ? 'Pick a flood level first (Low/Moderate/Severe)' : undefined}
-          className="rounded-md border border-ops-warn/60 bg-ops-warn/10 px-4 py-2.5 text-sm font-bold tracking-wide text-ops-warn
-                     transition hover:bg-ops-warn/20 active:bg-ops-warn/25 disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={handleSimulateClick}
+          disabled={busy || config.originId === config.destinationId}
+          className="rounded-xl border-2 border-amber-500/70 bg-amber-50 px-4 py-3 text-sm font-extrabold tracking-wide text-amber-700
+                     shadow-warn-glow transition-all hover:-translate-y-0.5 hover:bg-amber-100 active:translate-y-0
+                     disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:translate-y-0"
         >
           {simulateArmed ? '🌊 SIMULATE FLOOD' : 'SIMULATE FLOOD'}
         </button>
+        {needLevel && (
+          <div className="animate-rise flex items-start gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-snug text-amber-700">
+            <span>⚠</span>
+            <span>Pick a flood level first (Low / Moderate / Severe) — simulation runs against the selected level.</span>
+          </div>
+        )}
       </div>
 
-      <p className="mt-auto text-[11px] leading-relaxed text-ops-muted">
+      <p className="mt-auto border-t border-ops-edge pt-3 text-[11px] leading-relaxed text-ops-muted">
         Prototype decision-support demo. Flood zones are simulated and vehicle depth
         limits are illustrative — not official hydrology or vehicle specifications.
       </p>

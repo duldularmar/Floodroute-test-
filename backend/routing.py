@@ -52,6 +52,21 @@ DEFAULT_SPEED_KMH = 30
 MAX_SPEED_KMH = 60          # conservative cap -> keeps A* heuristic admissible
 MAX_SPEED_MPS = MAX_SPEED_KMH / 3.6
 
+# extra cost multiplier basis for a "prefer big roads" profile: 0 = no penalty,
+# higher = avoid small streets. Applied only when a profile sets road_class_weight.
+ROAD_CLASS_PENALTY = {
+    'motorway': 0.0, 'motorway_link': 0.05,
+    'trunk': 0.0, 'trunk_link': 0.05,
+    'primary': 0.0, 'primary_link': 0.05,
+    'secondary': 0.05, 'secondary_link': 0.1,
+    'tertiary': 0.2, 'tertiary_link': 0.25,
+    'unclassified': 0.5,
+    'residential': 0.5,
+    'living_street': 0.6,
+    'service': 0.7,
+    'road': 0.4,
+}
+
 # prototype risk bands for the *route-level* risk label, by max simulated
 # flood depth (m) along the route. Simulated demo values, not official.
 RISK_BANDS = [(0.0, 'NONE'), (0.12, 'LOW'), (0.25, 'MODERATE'), (0.45, 'HIGH')]
@@ -382,16 +397,23 @@ class RoadGraph:
         A* with configurable cost.
 
         origin/destination: {'lat':..,'lon':..}. weights: dict with optional keys
-        flood_weight (default 0), terrain_weight (default 0). vehicle: dict with
+        flood_weight (default 0), terrain_weight (default 0), road_class_weight
+        (default 0, prefers major roads when > 0), and basis ('time' default or
+        'distance' for a minimum-length route). vehicle: dict with
         'max_flood_depth_m' (edges deeper than the limit are blocked) or None.
 
         Cost per edge = time_s * (1 + fw * (depth/limit)^2 * 9) * (1 + tw*terrain_risk)
+                          * (1 + rcw * ROAD_CLASS_PENALTY[class])
         (multipliers >= 1, so the straight-line time heuristic stays admissible).
+        With basis='distance' the cost is the edge length in metres instead, and
+        the heuristic becomes the straight-line distance (also admissible).
         Returns route dict; raises RouteNotFound.
         """
         w = weights or {}
         fw = float(w.get('flood_weight', 0.0))
         tw = float(w.get('terrain_weight', 0.0))
+        rcw = float(w.get('road_class_weight', 0.0))
+        dist_basis = str(w.get('basis', 'time')).lower() == 'distance'
         vlimit = vehicle.get('max_flood_depth_m') if vehicle else None
 
         olat, olon = self._as_latlon(origin)
@@ -410,14 +432,20 @@ class RoadGraph:
                     'blocked_roads': [], 'path': [[lon, lat]],
                     'origin_node': start, 'destination_node': goal, 'edges': []}
 
+        goal_lon, goal_lat = self.node_coords[goal]
+
         def h(nid):
             nlon, nlat = self.node_coords[nid]
-            return haversine_m(nlon, nlat, *self.node_coords[goal]) / MAX_SPEED_MPS
+            if dist_basis:
+                return haversine_m(nlon, nlat, goal_lon, goal_lat)  # metres
+            return haversine_m(nlon, nlat, goal_lon, goal_lat) / MAX_SPEED_MPS
 
-        def edge_cost(time_s, attrs):
+        def edge_cost(length_m, time_s, attrs):
             depth = attrs.get('flood_depth_m') or 0.0
             if vlimit is not None and depth > vlimit:
                 return None  # blocked for this vehicle (prototype threshold)
+            if dist_basis:
+                return length_m  # pure distance basis (blocking still enforced)
             m = 1.0
             if fw > 0 and depth > 0 and vlimit:
                 m += fw * (depth / vlimit) ** 2 * 9.0
@@ -425,6 +453,8 @@ class RoadGraph:
                 m += fw * min(depth / 0.3, 1.0) * 9.0
             if tw > 0:
                 m += tw * (attrs.get('terrain_risk') or 0.0)
+            if rcw > 0:
+                m += rcw * ROAD_CLASS_PENALTY.get(attrs.get('highway', ''), 0.4)
             return time_s * m
 
         gscore = {start: 0.0}
@@ -448,7 +478,7 @@ class RoadGraph:
                 if v in closed:
                     continue
                 attrs = self.edge_attrs[idx]
-                c = edge_cost(time_s, attrs)
+                c = edge_cost(length, time_s, attrs)
                 if c is None:
                     name = attrs.get('name') or f"way {attrs.get('osm_id', '?')}"
                     blocked_seen[name] = max(blocked_seen.get(name, 0.0),
@@ -498,6 +528,7 @@ class RoadGraph:
                 'risk': risk_label(max_depth),
                 'flood_exposure': round(flooded_m / 1000.0, 3),
                 'terrain_score': round(terr_sum / max(1, len(used_idx)), 3),
+                'avg_speed_kmh': round(dist_m / 1000.0 / (true_time / 60.0 / 60.0), 1) if true_time > 0 else 0.0,
                 'blocked_roads': sorted(blocked_seen),
                 'path': [[lon, lat] for lon, lat in path],
                 'origin_node': start,

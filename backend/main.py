@@ -28,9 +28,12 @@ DEMO_LOCATIONS = {
 
 # route profiles -> A* weights (prototype values; terrain must not override flood)
 ROUTE_PROFILES = {
-    'fastest':     {'flood_weight': 0.0, 'terrain_weight': 0.0},
-    'safest':      {'flood_weight': 1.0, 'terrain_weight': 0.5},
-    'high_ground': {'flood_weight': 1.0, 'terrain_weight': 1.5},
+    'fastest':      {'flood_weight': 0.0, 'terrain_weight': 0.0},
+    'safest':       {'flood_weight': 1.0, 'terrain_weight': 0.5},
+    'high_ground':  {'flood_weight': 1.0, 'terrain_weight': 1.5},
+    'shortest':     {'flood_weight': 0.0, 'terrain_weight': 0.0, 'basis': 'distance'},
+    'major_roads':  {'flood_weight': 0.3, 'terrain_weight': 0.0, 'road_class_weight': 1.2},
+    'balanced':     {'flood_weight': 0.4, 'terrain_weight': 0.15, 'road_class_weight': 0.3},
 }
 
 
@@ -98,6 +101,7 @@ def _route_payload(result):
         'risk': result['risk'],
         'flood_exposure': result['flood_exposure'],
         'terrain_score': result['terrain_score'],
+        'avg_speed_kmh': result.get('avg_speed_kmh', 0.0),
         'blocked_roads': result['blocked_roads'],
         'path': result['path'],
         'origin_node': result['origin_node'],
@@ -188,7 +192,7 @@ def api_simulate(req: SimulateRequest):
     zones = simulation.activate(g, scenario=req.scenario, flood_level=level)
     try:
         routes = {}
-        for profile in ('fastest', 'safest', 'high_ground'):
+        for profile in ('fastest', 'safest', 'high_ground', 'shortest', 'major_roads', 'balanced'):
             try:
                 r = g.find_route(req.origin.model_dump(), req.destination.model_dump(),
                                  weights=ROUTE_PROFILES[profile], vehicle=vehicle)

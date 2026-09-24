@@ -49,6 +49,7 @@ export interface RouteResult {
   risk: string
   flood_exposure: number // km of flooded road on the route
   terrain_score: number // 0 (high ground) .. 1 (low ground)
+  avg_speed_kmh?: number // route-wide average speed (major_roads will be highest)
   blocked_roads: string[]
   path: [number, number][] // [[lon, lat], ...]
   origin_node: number
@@ -57,10 +58,18 @@ export interface RouteResult {
   error?: string
 }
 
+export type ProfileId = 'fastest' | 'safest' | 'high_ground' | 'shortest' | 'major_roads' | 'balanced'
+
+/** canonical display order for route profiles (frontend + backend parity) */
+export const PROFILE_ORDER: ProfileId[] = ['fastest', 'safest', 'high_ground', 'shortest', 'major_roads', 'balanced']
+
 export interface RouteProfile {
   fastest?: RouteResult
   safest?: RouteResult
   high_ground?: RouteResult
+  shortest?: RouteResult
+  major_roads?: RouteResult
+  balanced?: RouteResult
 }
 
 export interface SimulateResponse {
@@ -125,7 +134,7 @@ export async function calculateRoute(opts: {
   origin: LatLng
   destination: LatLng
   vehicle: VehicleId
-  profile: 'fastest' | 'safest' | 'high_ground'
+  profile: ProfileId
   flood_level?: FloodLevel // 'NORMAL' -> omitted so the backend routes on clean state
 }): Promise<RouteResult> {
   const body: Record<string, unknown> = {
