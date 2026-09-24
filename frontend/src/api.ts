@@ -71,8 +71,8 @@ export interface SimulateResponse {
   vehicle_limit_m: number
   note: string
   flood_zones: FloodZone[]
-  affected_roads: { name: string; depth_m: number; flood_risk: string; zone: string }[]
-  blocked_roads: { name: string; depth_m: number; vehicle: string; vehicle_limit_m: number }[]
+  affected_roads: { name: string; depth_m: number; flood_risk: string; zone: string | null }[]
+  blocked_roads: { name: string; depth_m: number; vehicle: string; vehicle_limit_m: number; zone: string | null }[]
   routes: RouteProfile
   stats: {
     affected_road_count: number

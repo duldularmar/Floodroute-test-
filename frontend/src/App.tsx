@@ -94,6 +94,7 @@ export default function App() {
       setSimulation(null)
       setSelected('fastest')
       setRerouted(false)
+      prevPathRef.current = '' // baseline: don't compare against the flooded route
       rememberPath(rs, 'fastest')
       computedRoutesKey.current = routesKey
       computedSimKey.current = null

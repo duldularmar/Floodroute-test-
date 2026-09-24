@@ -88,20 +88,14 @@ export default function FloodMap({
   fitSignal: number
   simulation: SimulateResponse | null
 }) {
-  // de-dup blocked road names (the backend reports one entry per flooded way)
-  const blocked = simulation
-    ? Object.values(
-        simulation.blocked_roads.reduce<Record<string, { name: string; depth_m: number }>>(
-          (acc, b) => {
-            if (!acc[b.name] || acc[b.name].depth_m < b.depth_m) {
-              acc[b.name] = { name: b.name, depth_m: b.depth_m }
-            }
-            return acc
-          },
-          {},
-        ),
-      )
-    : []
+  // group blocked roads by their flood zone so each zone with impassable roads
+  // gets exactly one 🚫 marker (backend tags every blocked road with its zone id)
+  const blockedZones = zones
+    .map((zone) => ({
+      zone,
+      roads: (simulation?.blocked_roads ?? []).filter((b) => b.zone === zone.id),
+    }))
+    .filter((g) => g.roads.length > 0)
   const ordered = (['fastest', 'safest', 'high_ground'] as const)
     .filter((p) => routes[p]?.success)
     .sort((a, b) => (a === selected ? 1 : 0) - (b === selected ? 1 : 0))
@@ -151,30 +145,33 @@ export default function FloodMap({
         )
       })}
 
-      {/* blocked roads: one red 🚫 marker per flooded way the vehicle cannot enter */}
-      {blocked.map((b) => {
-        const zone = zones.find((z) =>
-          simulation?.affected_roads.some(
-            (a) => a.name === b.name && a.zone === z.id,
-          ),
-        )
-        // place the marker at the center of the zone that flooded this road
-        const poly = zone?.polygon
-        const pos: [number, number] | null = poly
-          ? [poly.reduce((s, p) => s + p[1], 0) / poly.length,
-             poly.reduce((s, p) => s + p[0], 0) / poly.length]
-          : null
-        return pos ? (
-          <Marker key={'blk-' + b.name} position={pos} icon={BLOCKED_ICON}>
+      {/* blocked roads: one 🚫 marker per flood zone containing roads the
+          vehicle cannot enter (backend tags each blocked road with its zone) */}
+      {blockedZones.map(({ zone, roads }) => {
+        const poly = zone.polygon
+        const pos: [number, number] = [
+          poly.reduce((s, p) => s + p[1], 0) / poly.length,
+          poly.reduce((s, p) => s + p[0], 0) / poly.length,
+        ]
+        return (
+          <Marker key={'blk-' + zone.id + '-' + zone.depth_m} position={pos} icon={BLOCKED_ICON}>
             <Popup>
               <div className="text-xs">
-                <b>🚫 {b.name}</b><br />
-                depth {b.depth_m.toFixed(2)} m — impassable for {simulation?.vehicle}<br />
-                <span className="opacity-60">(simulated prototype threshold)</span>
+                <b>🚫 {roads.length} blocked road{roads.length > 1 ? 's' : ''} — {zone.name}</b><br />
+                {roads.slice(0, 6).map((b) => (
+                  <div key={b.name + b.depth_m}>
+                    {b.name} — {b.depth_m.toFixed(2)} m
+                  </div>
+                ))}
+                {roads.length > 6 && <div className="opacity-60">+ {roads.length - 6} more…</div>}
+                <div className="mt-1 opacity-60">
+                  deeper than the {simulation?.vehicle} limit ({simulation?.vehicle_limit_m} m) —
+                  simulated prototype threshold
+                </div>
               </div>
             </Popup>
           </Marker>
-        ) : null
+        )
       })}
 
       {/* routes: unselected first, selected last (drawn on top) */}
