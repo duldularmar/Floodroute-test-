@@ -1,0 +1,26 @@
+# OS junk
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.*
+
+# Editor
+.vscode/
+.idea/
+
+# Heavy raw data (uncomment if you don't want the originals in git)
+# data/raw/
